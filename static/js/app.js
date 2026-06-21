@@ -9,7 +9,8 @@ let appState = {
     mapMarkers: [],
     predictionData: [],
     isHeatmapActive: false,
-    heatmapLayer: null
+    heatmapLayer: null,
+    selectionMarker: null
 };
 
 // Chart References
@@ -595,6 +596,78 @@ function drawMonthlyRiskChart(trends) {
     });
 }
 
+// Helper to show modern visual toast notifications
+function showToast(message, type = 'info') {
+    let container = document.querySelector('.toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    
+    let icon = '<i class="fa-solid fa-circle-info" style="color: var(--primary);"></i>';
+    if (type === 'success') {
+        icon = '<i class="fa-solid fa-circle-check" style="color: var(--success);"></i>';
+        toast.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+        toast.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(16, 185, 129, 0.15)';
+    } else if (type === 'warning') {
+        icon = '<i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i>';
+        toast.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+        toast.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(245, 158, 11, 0.15)';
+    }
+    
+    toast.innerHTML = `
+        ${icon}
+        <span>${message}</span>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Auto-remove from DOM
+    setTimeout(() => {
+        toast.remove();
+    }, 4000);
+}
+
+// Flash highlight style to coordinate inputs
+function highlightInputs(inputIds) {
+    inputIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.add('highlight-flash');
+            setTimeout(() => {
+                el.classList.remove('highlight-flash');
+            }, 1000);
+        }
+    });
+}
+
+// Seamlessly update coordinate inputs across the app
+function updateCoordinatesInForms(lat, lng) {
+    const fields = [
+        { id: 'rep-lat', val: lat },
+        { id: 'rep-lng', val: lng },
+        { id: 'new-lat', val: lat },
+        { id: 'new-lng', val: lng }
+    ];
+    
+    const updatedIds = [];
+    fields.forEach(field => {
+        const el = document.getElementById(field.id);
+        if (el) {
+            el.value = field.val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            updatedIds.push(field.id);
+        }
+    });
+    
+    highlightInputs(updatedIds);
+}
+
 // Leaflet Map Init & Render
 function initMap() {
     if (appState.map) {
@@ -619,23 +692,35 @@ function initMap() {
         maxZoom: 20
     }).addTo(appState.map);
 
-    // Map click handler to prefill report Lat/Lng coordinates
+    // Map click handler to prefill report Lat/Lng coordinates with drag support
     appState.map.on('click', (e) => {
-        const lat = e.latlng.lat.toFixed(4);
-        const lng = e.latlng.lng.toFixed(4);
+        const lat = e.latlng.lat.toFixed(6);
+        const lng = e.latlng.lng.toFixed(6);
         
-        // Populate community report coordinates
-        document.getElementById('rep-lat').value = lat;
-        document.getElementById('rep-lng').value = lng;
+        updateCoordinatesInForms(lat, lng);
         
-        // Populate new source coordinates
-        if (document.getElementById('new-lat')) {
-            document.getElementById('new-lat').value = lat;
-            document.getElementById('new-lng').value = lng;
+        // Update or create a visual, draggable selection marker
+        if (appState.selectionMarker) {
+            appState.selectionMarker.setLatLng(e.latlng);
+        } else {
+            appState.selectionMarker = L.marker(e.latlng, {
+                draggable: true,
+                title: "Selected Location"
+            }).addTo(appState.map);
+            
+            // Handle real-time dragging updates
+            appState.selectionMarker.on('drag', (event) => {
+                const draggedLatLng = event.latlng || event.target.getLatLng();
+                updateCoordinatesInForms(draggedLatLng.lat.toFixed(6), draggedLatLng.lng.toFixed(6));
+            });
+            
+            appState.selectionMarker.on('dragend', (event) => {
+                const draggedLatLng = event.target.getLatLng();
+                showToast(`Location updated to [${draggedLatLng.lat.toFixed(6)}, ${draggedLatLng.lng.toFixed(6)}]`, 'success');
+            });
         }
         
-        // Show indicator message
-        alert(`Selected coordinates [${lat}, ${lng}] loaded into forms!`);
+        showToast(`Selected coordinates [${lat}, ${lng}] loaded into forms!`, 'success');
     });
 
     // Setup Toggle Heatmap event
@@ -703,6 +788,41 @@ function renderMapMarkers() {
                     fillOpacity: 0.8
                 }).addTo(appState.map);
                 
+                // Clicking a source marker also auto-populates the forms
+                marker.on('click', () => {
+                    const lat = s.latitude.toFixed(6);
+                    const lng = s.longitude.toFixed(6);
+                    updateCoordinatesInForms(lat, lng);
+                    
+                    // Auto-select this source in the report form dropdown
+                    const repSourceSelect = document.getElementById('rep-source');
+                    if (repSourceSelect) {
+                        repSourceSelect.value = s.source_id;
+                        repSourceSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    
+                    // Sync the draggable selection marker position
+                    if (appState.selectionMarker) {
+                        appState.selectionMarker.setLatLng([s.latitude, s.longitude]);
+                    } else {
+                        appState.selectionMarker = L.marker([s.latitude, s.longitude], {
+                            draggable: true,
+                            title: "Selected Location"
+                        }).addTo(appState.map);
+                        
+                        appState.selectionMarker.on('drag', (event) => {
+                            const draggedLatLng = event.latlng || event.target.getLatLng();
+                            updateCoordinatesInForms(draggedLatLng.lat.toFixed(6), draggedLatLng.lng.toFixed(6));
+                        });
+                        appState.selectionMarker.on('dragend', (event) => {
+                            const draggedLatLng = event.target.getLatLng();
+                            showToast(`Location updated to [${draggedLatLng.lat.toFixed(6)}, ${draggedLatLng.lng.toFixed(6)}]`, 'success');
+                        });
+                    }
+                    
+                    showToast(`Selected source "${s.name}" coordinates loaded into forms!`, 'success');
+                });
+                
                 // Detailed popup details
                 const reading = s.latest_reading;
                 let readingDetails = "<em>No reading data</em>";
@@ -760,6 +880,41 @@ function renderMapMarkers() {
                     weight: 1,
                     fillOpacity: 0.9
                 }).addTo(appState.map);
+                
+                // Clicking a report marker also auto-populates the forms
+                repMarker.on('click', () => {
+                    const lat = r.latitude.toFixed(6);
+                    const lng = r.longitude.toFixed(6);
+                    updateCoordinatesInForms(lat, lng);
+                    
+                    // Match associated source if any
+                    const repSourceSelect = document.getElementById('rep-source');
+                    if (repSourceSelect) {
+                        repSourceSelect.value = r.source_id || '';
+                        repSourceSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    
+                    // Sync the draggable selection marker position
+                    if (appState.selectionMarker) {
+                        appState.selectionMarker.setLatLng([r.latitude, r.longitude]);
+                    } else {
+                        appState.selectionMarker = L.marker([r.latitude, r.longitude], {
+                            draggable: true,
+                            title: "Selected Location"
+                        }).addTo(appState.map);
+                        
+                        appState.selectionMarker.on('drag', (event) => {
+                            const draggedLatLng = event.latlng || event.target.getLatLng();
+                            updateCoordinatesInForms(draggedLatLng.lat.toFixed(6), draggedLatLng.lng.toFixed(6));
+                        });
+                        appState.selectionMarker.on('dragend', (event) => {
+                            const draggedLatLng = event.target.getLatLng();
+                            showToast(`Location updated to [${draggedLatLng.lat.toFixed(6)}, ${draggedLatLng.lng.toFixed(6)}]`, 'success');
+                        });
+                    }
+                    
+                    showToast(`Selected report coordinates loaded into forms!`, 'success');
+                });
 
                 let imageHtml = "";
                 if (r.image_filename) {
