@@ -1,4 +1,4 @@
-# Q-NEXUS | Water Quality Monitoring & Prediction System
+#  Water Quality Monitoring & Prediction System
 
 A modern, full-stack Web Application designed to monitor water safety indices, automatically flag chemical thresholds, forecast future contaminants using scikit-learn models, and enable community incident reporting with geolocated mapping.
 
