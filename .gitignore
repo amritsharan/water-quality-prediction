@@ -1,0 +1,18 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database
+water_quality.db
+water_quality.db-journal
+
+# ML Model Binaries
+model_binaries/
+
+# Uploads
+static/uploads/*
+
+# OS files
+.DS_Store
+Thumbs.db

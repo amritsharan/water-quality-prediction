@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q-NEXUS | Water Quality Monitoring & Prediction</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet Map CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-droplet brand-icon"></i>
+                <div class="brand-text">
+                    <h1>Q-NEXUS</h1>
+                    <span>Water Quality Monitor</span>
+                </div>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-tab="dashboard">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="map">
+                    <i class="fa-solid fa-map-location-dot"></i>
+                    <span>Pollution Map</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="predictions">
+                    <i class="fa-solid fa-brain"></i>
+                    <span>AI Forecast</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="reports">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span>Community reports</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="pulse-dot green"></span>
+                    <span>Monitoring Active</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="app-header">
+                <div class="header-left">
+                    <h2 id="view-title">Dashboard Overview</h2>
+                    <p id="view-subtitle" class="text-secondary">Real-time water quality indices, anomalies, and aggregate data.</p>
+                </div>
+                <div class="header-right">
+                    <div class="date-badge">
+                        <i class="fa-regular fa-calendar"></i>
+                        <span id="current-date">June 21, 2026</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Views -->
+            <div class="view-container">
+                
+                <!-- 1. DASHBOARD VIEW -->
+                <section id="dashboard-view" class="view-panel active">
+                    <!-- Metrics Row -->
+                    <div class="metrics-grid">
+                        <div class="metric-card glass">
+                            <div class="metric-icon blue"><i class="fa-solid fa-water"></i></div>
+                            <div class="metric-info">
+                                <h3>Total Sources</h3>
+                                <p id="total-sources-val">-</p>
+                                <span class="metric-label">Monitored sites</span>
+                            </div>
+                        </div>
+                        <div class="metric-card glass">
+                            <div class="metric-icon green" id="wqi-status-icon"><i class="fa-solid fa-heart-pulse"></i></div>
+                            <div class="metric-info">
+                                <h3>Average Safety Score</h3>
+                                <p id="avg-wqi-val">-</p>
+                                <span class="metric-label" id="avg-wqi-label">Loading status...</span>
+                            </div>
+                        </div>
+                        <div class="metric-card glass">
+                            <div class="metric-icon red" id="alerts-status-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                            <div class="metric-info">
+                                <h3>Active Alerts</h3>
+                                <p id="active-alerts-val">0</p>
+                                <span class="metric-label">Rule violations</span>
+                            </div>
+                        </div>
+                        <div class="metric-card glass">
+                            <div class="metric-icon purple"><i class="fa-solid fa-users"></i></div>
+                            <div class="metric-info">
+                                <h3>Citizen Reports</h3>
+                                <p id="citizen-reports-val">-</p>
+                                <span class="metric-label">Community reported issues</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Alerts Banner if active -->
+                    <div id="dashboard-alerts-banner" class="alerts-banner glass hidden">
+                        <div class="alerts-banner-header">
+                            <i class="fa-solid fa-circle-exclamation text-danger"></i>
+                            <h4>CRITICAL WATER QUALITY ALERTS DETECTED</h4>
+                        </div>
+                        <ul id="dashboard-alerts-list">
+                            <!-- Alert items loaded dynamically -->
+                        </ul>
+                    </div>
+
+                    <!-- Charts Grid -->
+                    <div class="charts-grid">
+                        <div class="chart-card glass span-2">
+                            <div class="chart-header">
+                                <h4>Historical Parameter Trends</h4>
+                                <div class="chart-actions">
+                                    <select id="trend-source-select" class="custom-select">
+                                        <!-- Sources loaded dynamically -->
+                                    </select>
+                                    <div class="btn-group">
+                                        <button class="btn btn-sm btn-tab active" data-param="pH">pH</button>
+                                        <button class="btn btn-sm btn-tab" data-param="turbidity">Turbidity</button>
+                                        <button class="btn btn-sm btn-tab" data-param="tds">TDS</button>
+                                        <button class="btn btn-sm btn-tab" data-param="dissolved_oxygen">DO</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="chart-wrapper">
+                                <canvas id="parameter-trend-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-card glass">
+                            <div class="chart-header">
+                                <h4>Site Safety Index Distribution</h4>
+                            </div>
+                            <div class="chart-wrapper flex-center">
+                                <canvas id="safety-distribution-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-card glass span-3">
+                            <div class="chart-header">
+                                <h4>Monthly Regional Risk Index</h4>
+                                <span class="card-subtitle">Lower risk score indicates cleaner water source aggregates.</span>
+                            </div>
+                            <div class="chart-wrapper">
+                                <canvas id="monthly-risk-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2. POLLUTION MAP VIEW -->
+                <section id="map-view" class="view-panel">
+                    <div class="map-layout">
+                        <div class="map-container-wrapper glass">
+                            <div id="pollution-map"></div>
+                        </div>
+                        <div class="map-sidebar glass">
+                            <h3>Monitoring Legend</h3>
+                            <div class="legend-list">
+                                <div class="legend-item">
+                                    <span class="legend-marker marker-green"></span>
+                                    <div>
+                                        <strong>Safe (Low Risk)</strong>
+                                        <p>pH (6.5-8.5), TDS &lt; 500, Turbidity &lt; 5</p>
+                                    </div>
+                                </div>
+                                <div class="legend-item">
+                                    <span class="legend-marker marker-yellow"></span>
+                                    <div>
+                                        <strong>Moderate (Medium Risk)</strong>
+                                        <p>Minor parameter deviation detected.</p>
+                                    </div>
+                                </div>
+                                <div class="legend-item">
+                                    <span class="legend-marker marker-red"></span>
+                                    <div>
+                                        <strong>Unsafe (High Risk)</strong>
+                                        <p>Critical threshold exceeded. Boiled/Filtered advised.</p>
+                                    </div>
+                                </div>
+                                <div class="legend-item">
+                                    <span class="legend-marker marker-report"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                                    <div>
+                                        <strong>Community Report</strong>
+                                        <p>Smell, dead fish, or visible contamination.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <button id="toggle-heatmap-btn" class="btn btn-secondary w-full" style="margin-top: 15px;"><i class="fa-solid fa-fire-flame-curved" style="color: var(--warning);"></i> Toggle Heatmap Overlay</button>
+                            <hr class="divider">
+                            <div class="map-actions">
+                                <div class="btn-group w-full" style="margin-bottom: 15px;">
+                                    <button class="btn btn-sm btn-tab active" id="map-tab-sim" style="flex: 1;">Simulate IoT</button>
+                                    <button class="btn btn-sm btn-tab" id="map-tab-add" style="flex: 1;">Add Global Site</button>
+                                </div>
+                                
+                                <!-- Form 1: Simulate IoT -->
+                                <div id="map-panel-sim">
+                                    <p class="text-secondary sm" style="margin-bottom: 12px;">Submit live sensor metrics to update map nodes instantly.</p>
+                                    <form id="iot-simulator-form" class="sim-form">
+                                        <div class="form-group">
+                                            <label for="sim-source-select">Select Source</label>
+                                            <select id="sim-source-select" class="custom-select w-full" required>
+                                                <!-- Sources loaded dynamically -->
+                                            </select>
+                                        </div>
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label for="sim-ph">pH</label>
+                                                <input type="number" step="0.1" id="sim-ph" value="7.2" class="form-control" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="sim-turb">Turbidity (NTU)</label>
+                                                <input type="number" step="0.1" id="sim-turb" value="1.5" class="form-control" required>
+                                            </div>
+                                        </div>
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label for="sim-tds">TDS (mg/L)</label>
+                                                <input type="number" step="1" id="sim-tds" value="180" class="form-control" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="sim-temp">Temp (°C)</label>
+                                                <input type="number" step="0.1" id="sim-temp" value="16.5" class="form-control" required>
+                                            </div>
+                                        </div>
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label for="sim-do">DO (mg/L)</label>
+                                                <input type="number" step="0.1" id="sim-do" value="8.5" class="form-control" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="sim-cond">Conductivity</label>
+                                                <input type="number" step="1" id="sim-cond" value="280" class="form-control" required>
+                                            </div>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary w-full" style="margin-top: 10px;"><i class="fa-solid fa-microchip"></i> Push Sensor Data</button>
+                                    </form>
+                                </div>
+
+                                <!-- Form 2: Add Global Site -->
+                                <div id="map-panel-add" class="hidden">
+                                    <p class="text-secondary sm" style="margin-bottom: 12px;">Add a new water monitoring source anywhere in the world.</p>
+                                    <form id="add-source-form" class="sim-form">
+                                        <div class="form-group">
+                                            <label for="new-name">Source Name</label>
+                                            <input type="text" id="new-name" class="form-control" placeholder="e.g. River Thames" required>
+                                        </div>
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label for="new-region">Region / City</label>
+                                                <input type="text" id="new-region" class="form-control" placeholder="e.g. London" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="new-type">Type</label>
+                                                <select id="new-type" class="custom-select w-full" required>
+                                                    <option value="Lake">Lake</option>
+                                                    <option value="River">River</option>
+                                                    <option value="Borewell">Borewell</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label for="new-lat">Latitude</label>
+                                                <input type="number" step="0.0001" id="new-lat" class="form-control" placeholder="51.5074" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="new-lng">Longitude</label>
+                                                <input type="number" step="0.0001" id="new-lng" class="form-control" placeholder="-0.1278" required>
+                                            </div>
+                                        </div>
+                                        
+                                        <h5 style="margin: 10px 0 5px 0; font-size: 11px; color: var(--text-muted);">Baseline readings</h5>
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label for="new-ph">pH</label>
+                                                <input type="number" step="0.1" id="new-ph" value="7.2" class="form-control" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="new-turb">Turbidity (NTU)</label>
+                                                <input type="number" step="0.1" id="new-turb" value="1.2" class="form-control" required>
+                                            </div>
+                                        </div>
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label for="new-tds">TDS (mg/L)</label>
+                                                <input type="number" step="1" id="new-tds" value="150" class="form-control" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="new-temp">Temp (°C)</label>
+                                                <input type="number" step="0.1" id="new-temp" value="15.0" class="form-control" required>
+                                            </div>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary w-full" style="margin-top: 10px;"><i class="fa-solid fa-earth-americas"></i> Register & Center Map</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. AI PREDICTOR VIEW -->
+                <section id="predictions-view" class="view-panel">
+                    <div class="prediction-header-controls glass">
+                        <div class="form-row align-end">
+                            <div class="form-group flex-1">
+                                <label for="pred-source-select">Choose Water Source</label>
+                                <select id="pred-source-select" class="custom-select w-full">
+                                    <!-- Loaded dynamically -->
+                                </select>
+                            </div>
+                            <div class="form-group flex-1">
+                                <label for="pred-algo-select">Forecasting Algorithm</label>
+                                <select id="pred-algo-select" class="custom-select w-full">
+                                    <option value="rf">(Recommended) Random Forest Regressor</option>
+                                    <option value="lr">Linear Regression Trend Model</option>
+                                </select>
+                            </div>
+                            <button id="run-prediction-btn" class="btn btn-primary h-form"><i class="fa-solid fa-gears"></i> Predict 7-Day Trend</button>
+                        </div>
+                    </div>
+
+                    <div class="predictions-grid">
+                        <!-- AI Engine Performance Metrics -->
+                        <div class="chart-card glass span-2" style="height: auto; padding: 20px;">
+                            <div class="chart-header" style="margin-bottom: 10px;">
+                                <h4>AI Engine Performance Validation</h4>
+                                <span class="badge safe" id="metrics-recommendation">Determining best model...</span>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px;">
+                                <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px; border: 1px solid var(--border-glass);">
+                                    <h5 style="margin-bottom: 10px; color: var(--primary);"><i class="fa-solid fa-brain"></i> Random Forest Regressor</h5>
+                                    <div class="map-popup-row"><strong>pH Mean Absolute Error (MAE):</strong> <span id="rf-ph-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>TDS Mean Absolute Error (MAE):</strong> <span id="rf-tds-mae">-</span></div>
+                                </div>
+                                <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px; border: 1px solid var(--border-glass);">
+                                    <h5 style="margin-bottom: 10px; color: var(--success);"><i class="fa-solid fa-chart-line"></i> Linear Regression Model</h5>
+                                    <div class="map-popup-row"><strong>pH Mean Absolute Error (MAE):</strong> <span id="lr-ph-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>TDS Mean Absolute Error (MAE):</strong> <span id="lr-tds-mae">-</span></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chart-card glass">
+                            <div class="chart-header">
+                                <h4>Forecasted pH Trend</h4>
+                            </div>
+                            <div class="chart-wrapper">
+                                <canvas id="pred-ph-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card glass">
+                            <div class="chart-header">
+                                <h4>Forecasted TDS (mg/L) Trend</h4>
+                            </div>
+                            <div class="chart-wrapper">
+                                <canvas id="pred-tds-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card glass span-2">
+                            <div class="chart-header">
+                                <h4>Forecasted Safety Index & Severity Predictions</h4>
+                            </div>
+                            <div class="table-wrapper">
+                                <table class="custom-table" id="prediction-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Forecast Day</th>
+                                            <th>Date</th>
+                                            <th>Predicted pH</th>
+                                            <th>Predicted TDS</th>
+                                            <th>Predicted DO</th>
+                                            <th>Risk Score</th>
+                                            <th>Safety Level</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colspan="7" class="text-center text-secondary">Select a source and click 'Predict' to run forecasts.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. COMMUNITY REPORTS VIEW -->
+                <section id="reports-view" class="view-panel">
+                    <div class="reports-layout">
+                        <!-- Submit Report Form -->
+                        <div class="report-form-card glass">
+                            <h3>File Community Pollution Report</h3>
+                            <p class="text-secondary sm">Help local authorities trace water hazards. Upload images and geo-coordinates.</p>
+                            <form id="community-report-form" enctype="multipart/form-data">
+                                <div class="form-group">
+                                    <label for="rep-name">Reporter Name</label>
+                                    <input type="text" id="rep-name" class="form-control" placeholder="Your Name (Optional)" defaultValue="Anonymous">
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="rep-source">Associated Source (Optional)</label>
+                                        <select id="rep-source" class="custom-select w-full">
+                                            <option value="">None / Other Location</option>
+                                            <!-- Dynamically filled -->
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="rep-issue">Issue Type</label>
+                                        <select id="rep-issue" class="custom-select w-full" required>
+                                            <option value="Water discoloration">Water discoloration</option>
+                                            <option value="Bad smell">Bad smell</option>
+                                            <option value="Dead fish">Dead fish</option>
+                                            <option value="Industrial waste">Industrial waste</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="rep-lat">Latitude</label>
+                                        <input type="number" step="0.0001" id="rep-lat" class="form-control" placeholder="47.6062" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="rep-lng">Longitude</label>
+                                        <input type="number" step="0.0001" id="rep-lng" class="form-control" placeholder="-122.3321" required>
+                                    </div>
+                                    <button type="button" id="get-location-btn" class="btn btn-secondary h-form btn-icon-only" title="Autofill Current Location"><i class="fa-solid fa-crosshairs"></i></button>
+                                </div>
+                                <div class="form-group">
+                                    <label for="rep-desc">Description of Contamination</label>
+                                    <textarea id="rep-desc" class="form-control text-area" rows="3" placeholder="Describe the water smell, texture, or any surrounding issues..." required></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label for="rep-image">Evidence Photo Upload</label>
+                                    <div class="file-upload-wrapper">
+                                        <input type="file" id="rep-image" accept="image/*" class="file-input">
+                                        <div class="file-upload-design">
+                                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                                            <span>Click to upload evidence photo</span>
+                                            <span class="file-name-display text-secondary sm">No file selected</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary w-full"><i class="fa-solid fa-paper-plane"></i> Submit Incident Report</button>
+                            </form>
+                        </div>
+
+                        <!-- Active Reports Feed -->
+                        <div class="reports-feed-container">
+                            <h3>Active Incidents & Reports Feed</h3>
+                            <div class="reports-list" id="community-reports-list">
+                                <!-- Loaded dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Leaflet Map JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Leaflet Heatmap Plugin -->
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
