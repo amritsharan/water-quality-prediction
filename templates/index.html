@@ -45,6 +45,10 @@
                     <i class="fa-solid fa-circle-exclamation"></i>
                     <span>Community reports</span>
                 </a>
+                <a href="#" class="nav-item" data-tab="history">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>User History</span>
+                </a>
                 <a href="#" id="open-standards-modal-btn" class="nav-item">
                     <i class="fa-solid fa-book-medical"></i>
                     <span>Safety Standards</span>
@@ -67,6 +71,11 @@
                     <p id="view-subtitle" class="text-secondary">Real-time water quality indices, anomalies, and aggregate data.</p>
                 </div>
                 <div class="header-right" style="display: flex; gap: 10px; align-items: center;">
+                    <div id="user-badge-container" class="hidden" style="display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.05); padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border-glass);">
+                        <i class="fa-solid fa-circle-user" style="color: var(--primary);"></i>
+                        <span id="user-display-name" style="font-size: 13px; font-weight: 500;">User</span>
+                        <button type="button" id="logout-btn" class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 11px; margin-left: 4px;" title="Sign Out"><i class="fa-solid fa-right-from-bracket"></i> Exit</button>
+                    </div>
                     <button id="print-executive-report-btn" class="btn btn-sm btn-secondary" title="Export PDF Executive Summary Report"><i class="fa-solid fa-file-pdf"></i> Print Executive Report</button>
                     <div class="date-badge">
                         <i class="fa-regular fa-calendar"></i>
@@ -539,10 +548,85 @@
                             </div>
                         </div>
                     </div>
+                <!-- 5. USER HISTORY VIEW -->
+                <section id="history-view" class="view-panel">
+                    <div class="glass" style="padding: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <h3><i class="fa-solid fa-clock-rotate-left" style="color: var(--primary);"></i> User Interaction & Access History</h3>
+                                <p class="text-secondary sm">Historical log of your sign ins, sign outs, and application interactions with timestamps.</p>
+                            </div>
+                            <button id="refresh-history-btn" class="btn btn-sm btn-secondary"><i class="fa-solid fa-rotate-right"></i> Refresh Activity Logs</button>
+                        </div>
+                        
+                        <div class="table-wrapper">
+                            <table class="custom-table" id="user-history-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 80px;">Log ID</th>
+                                        <th>Action / Event Description</th>
+                                        <th>Date & Timestamp</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="user-history-tbody">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </section>
 
             </div>
         </main>
+    </div>
+
+    <!-- User Authentication Modal Guard (Sign In & Sign Up) -->
+    <div id="auth-modal" class="modal-overlay hidden">
+        <div class="modal-card glass" style="max-width: 440px; padding: 30px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px; background: rgba(59, 130, 246, 0.15); border-radius: 50%; color: var(--primary); font-size: 24px; margin-bottom: 12px;">
+                    <i class="fa-solid fa-droplet"></i>
+                </div>
+                <h3 style="font-size: 20px; margin-bottom: 4px;">Water Quality Monitor</h3>
+                <p class="text-secondary sm">Sign in to access real-time telemetry, AI forecasting, & community reports.</p>
+            </div>
+
+            <!-- Tab Switcher -->
+            <div class="btn-group w-full" style="margin-bottom: 20px;">
+                <button type="button" class="btn btn-sm btn-tab active" id="auth-tab-login" style="flex: 1;">Sign In</button>
+                <button type="button" class="btn btn-sm btn-tab" id="auth-tab-register" style="flex: 1;">Create Account</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-identifier">Username or Email</label>
+                    <input type="text" id="login-identifier" class="form-control" placeholder="Enter username or email" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" class="form-control" placeholder="Enter password" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-full" style="margin-top: 10px; padding: 12px;"><i class="fa-solid fa-right-to-bracket"></i> Sign In</button>
+            </form>
+
+            <!-- Sign Up Form (hidden by default) -->
+            <form id="register-form" class="hidden">
+                <div class="form-group">
+                    <label for="reg-username">Username</label>
+                    <input type="text" id="reg-username" class="form-control" placeholder="Choose a username" required>
+                </div>
+                <div class="form-group">
+                    <label for="reg-email">Email Address</label>
+                    <input type="email" id="reg-email" class="form-control" placeholder="name@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="reg-password">Password</label>
+                    <input type="password" id="reg-password" class="form-control" placeholder="At least 6 characters" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-full" style="margin-top: 10px; padding: 12px;"><i class="fa-solid fa-user-plus"></i> Create Account</button>
+            </form>
+        </div>
     </div>
 
     <!-- WHO / EPA Water Safety Standards Modal -->

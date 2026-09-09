@@ -2,13 +2,15 @@ import os
 import uuid
 from datetime import datetime
 import numpy as np
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, session
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import database
 import models
 import seed_data
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'water-quality-secret-key-2026-secure')
 
 # Configure upload folder
 UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
@@ -31,10 +33,102 @@ with app.app_context():
         print("Training models...")
         models.train_all_models()
 
+# Helper decorator or check for active user session
+def get_current_user_id():
+    return session.get('user_id')
+
 # Render front-end SPA
 @app.route('/')
 def index():
     return render_template('index.html')
+
+# --- Authentication & Activity History API ---
+
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+
+    if not username or not email or not password:
+        return jsonify({"error": "Username, email, and password are required"}), 400
+
+    if len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters"}), 400
+
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    password_hash = generate_password_hash(password)
+    user_id = database.create_user(username, email, password_hash)
+
+    if not user_id:
+        return jsonify({"error": "Username or email already exists"}), 409
+
+    session['user_id'] = user_id
+    session['username'] = username
+    database.log_user_activity(user_id, "User Account Created & Initial Sign In")
+
+    return jsonify({
+        "message": "User registered successfully",
+        "user": {"user_id": user_id, "username": username, "email": email}
+    }), 201
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.get_json() or {}
+    identifier = data.get('identifier', '').strip()
+    password = data.get('password', '')
+
+    if not identifier or not password:
+        return jsonify({"error": "Username/email and password are required"}), 400
+
+    user = database.get_user_by_username_or_email(identifier)
+    if not user or not check_password_hash(user['password_hash'], password):
+        return jsonify({"error": "Invalid username/email or password"}), 401
+
+    session['user_id'] = user['user_id']
+    session['username'] = user['username']
+    database.log_user_activity(user['user_id'], "User Signed In")
+
+    return jsonify({
+        "message": "Sign in successful",
+        "user": {"user_id": user['user_id'], "username": user['username'], "email": user['email']}
+    }), 200
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    user_id = session.get('user_id')
+    if user_id:
+        database.log_user_activity(user_id, "User Signed Out")
+    session.clear()
+    return jsonify({"message": "Signed out successfully"}), 200
+
+@app.route('/api/auth/me', methods=['GET'])
+def get_me():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"authenticated": False}), 200
+
+    user = database.get_user_by_id(user_id)
+    if not user:
+        session.clear()
+        return jsonify({"authenticated": False}), 200
+
+    return jsonify({
+        "authenticated": True,
+        "user": {"user_id": user['user_id'], "username": user['username'], "email": user['email']}
+    }), 200
+
+@app.route('/api/user/history', methods=['GET'])
+def get_user_history():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+
+    logs = database.get_user_activity_logs(user_id)
+    return jsonify(logs), 200
 
 # Endpoint to get/create water sources
 @app.route('/api/sources', methods=['GET', 'POST'])

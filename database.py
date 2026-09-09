@@ -57,11 +57,34 @@ def init_db():
             FOREIGN KEY (source_id) REFERENCES Water_Source(source_id)
         )
     ''')
+
+    # Create Users table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Users (
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    ''')
+
+    # Create User_Activity_Logs table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS User_Activity_Logs (
+            log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES Users(user_id)
+        )
+    ''')
     
-    # Create Indexes for high-performance time series and source queries
+    # Create Indexes for high-performance time series, source, and user history queries
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_readings_source_ts ON Water_Readings (source_id, timestamp DESC)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_reports_source ON Community_Reports (source_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_reports_timestamp ON Community_Reports (timestamp DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_logs_user_ts ON User_Activity_Logs (user_id, timestamp DESC)')
     
     # Schema migration check: add status column if existing DB lacks it
     cursor.execute("PRAGMA table_info(Community_Reports)")
@@ -157,3 +180,56 @@ def update_report_status(report_id, new_status):
     conn.commit()
     conn.close()
     return rows_affected > 0
+
+# --- User Management & History Functions ---
+
+def create_user(username, email, password_hash):
+    timestamp = datetime.utcnow().isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO Users (username, email, password_hash, created_at)
+            VALUES (?, ?, ?, ?)
+        ''', (username, email, password_hash, timestamp))
+        user_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return user_id
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+def get_user_by_username_or_email(identifier):
+    conn = get_db_connection()
+    user = conn.execute('''
+        SELECT * FROM Users WHERE username = ? OR email = ?
+    ''', (identifier, identifier)).fetchone()
+    conn.close()
+    return dict(user) if user else None
+
+def get_user_by_id(user_id):
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM Users WHERE user_id = ?', (user_id,)).fetchone()
+    conn.close()
+    return dict(user) if user else None
+
+def log_user_activity(user_id, action):
+    timestamp = datetime.utcnow().isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO User_Activity_Logs (user_id, action, timestamp)
+        VALUES (?, ?, ?)
+    ''', (user_id, action, timestamp))
+    conn.commit()
+    conn.close()
+
+def get_user_activity_logs(user_id, limit=50):
+    conn = get_db_connection()
+    logs = [dict(row) for row in conn.execute('''
+        SELECT * FROM User_Activity_Logs WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?
+    ''', (user_id, limit)).fetchall()]
+    conn.close()
+    return logs
+

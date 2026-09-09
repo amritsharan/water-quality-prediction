@@ -202,6 +202,55 @@ class WaterQualitySystemTestCase(unittest.TestCase):
         self.assertIn('text/csv', res_exp_pred.headers.get('Content-Type'))
         self.assertIn(b'Forecast Day', res_exp_pred.data)
 
+    def test_user_authentication_and_history(self):
+        # 1. Test Register
+        reg_payload = {
+            "username": "testuser",
+            "email": "testuser@example.com",
+            "password": "secretpassword"
+        }
+        res_reg = self.client.post('/api/auth/register',
+                                   data=json.dumps(reg_payload),
+                                   content_type='application/json')
+        self.assertEqual(res_reg.status_code, 201)
+        reg_data = json.loads(res_reg.data)
+        self.assertIn('user', reg_data)
+        self.assertEqual(reg_data['user']['username'], 'testuser')
+
+        # 2. Test Get Me (Active Session)
+        res_me = self.client.get('/api/auth/me')
+        self.assertEqual(res_me.status_code, 200)
+        me_data = json.loads(res_me.data)
+        self.assertTrue(me_data['authenticated'])
+        self.assertEqual(me_data['user']['username'], 'testuser')
+
+        # 3. Test Activity History Logging
+        res_hist = self.client.get('/api/user/history')
+        self.assertEqual(res_hist.status_code, 200)
+        hist_data = json.loads(res_hist.data)
+        self.assertGreaterEqual(len(hist_data), 1)
+        self.assertIn("User Account Created", hist_data[0]['action'])
+
+        # 4. Test Logout
+        res_logout = self.client.post('/api/auth/logout')
+        self.assertEqual(res_logout.status_code, 200)
+
+        # Verify no longer authenticated
+        res_me2 = self.client.get('/api/auth/me')
+        self.assertFalse(json.loads(res_me2.data)['authenticated'])
+
+        # 5. Test Login
+        login_payload = {
+            "identifier": "testuser",
+            "password": "secretpassword"
+        }
+        res_login = self.client.post('/api/auth/login',
+                                     data=json.dumps(login_payload),
+                                     content_type='application/json')
+        self.assertEqual(res_login.status_code, 200)
+        self.assertEqual(json.loads(res_login.data)['user']['username'], 'testuser')
+
 if __name__ == '__main__':
     unittest.main()
+
 

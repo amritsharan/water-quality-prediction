@@ -35,6 +35,11 @@ A state-of-the-art, full-stack web application for real-time water safety monito
 - **Diagnostic Endpoint**: `GET /api/health` providing real-time system status checks (database connection, total sources, readings, reports, and ML binary readiness).
 - **Printable Executive Summary**: High-contrast, styled PDF executive report layout triggered directly via browser print (`window.print()`).
 
+### 🔐 7. User Authentication Guard & Interaction History Timeline
+- **Authentication Guard**: Secure session-based registration, login, and logout (`/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`). Prevents unauthenticated access via a modal guard overlay.
+- **Activity & Access History Logging**: Automatically logs user events (Sign In, Sign Out, Account Registration, Ingested Sensor Telemetry, AI Forecasts, Incident Reports) into `User_Activity_Logs` SQLite table.
+- **User History Timeline View**: Interactive timeline table view (`GET /api/user/history`) enabling users to review their complete usage history and access timestamps.
+
 ---
 
 ## 🛠️ Technology Stack

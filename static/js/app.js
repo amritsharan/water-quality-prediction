@@ -11,7 +11,8 @@ let appState = {
     isHeatmapActive: false,
     heatmapLayer: null,
     selectionMarker: null,
-    autoStreamTimer: null
+    autoStreamTimer: null,
+    currentUser: null
 };
 
 // Chart References
@@ -32,7 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initForms();
     initStandardsModal();
     initAutoStream();
-    loadDashboardData();
+    initAuthForms();
+    checkAuthSession();
 });
 
 // Setup Current Date
@@ -64,6 +66,10 @@ function initTabs() {
         reports: {
             title: "Community Reporting Hub",
             subtitle: "Citizen science reports of visible pollution incidents and anomalies."
+        },
+        history: {
+            title: "User Interaction & Access Timeline",
+            subtitle: "Historical log of your sign ins, sign outs, and application interactions with timestamps."
         }
     };
 
@@ -99,6 +105,8 @@ function initTabs() {
                 loadModelMetrics();
             } else if (tabId === 'reports') {
                 loadReportsFeed();
+            } else if (tabId === 'history') {
+                loadUserHistory();
             }
         });
     });
@@ -1549,4 +1557,186 @@ function streamSingleSensorReading() {
     })
     .catch(err => console.error("Auto stream ingestion error:", err));
 }
+
+// 9. Authentication Session Guard & Login/Signup Forms
+function checkAuthSession() {
+    fetch('/api/auth/me')
+        .then(res => res.json())
+        .then(data => {
+            if (data.authenticated && data.user) {
+                appState.currentUser = data.user;
+                
+                // Show user badge in header
+                const userBadge = document.getElementById('user-badge-container');
+                const userDisplayName = document.getElementById('user-display-name');
+                if (userBadge && userDisplayName) {
+                    userDisplayName.textContent = data.user.username;
+                    userBadge.classList.remove('hidden');
+                }
+                
+                // Hide auth modal
+                const authModal = document.getElementById('auth-modal');
+                if (authModal) authModal.classList.add('hidden');
+                
+                // Load dashboard data
+                loadDashboardData();
+            } else {
+                appState.currentUser = null;
+                
+                // Hide user badge
+                const userBadge = document.getElementById('user-badge-container');
+                if (userBadge) userBadge.classList.add('hidden');
+                
+                // Show auth modal guard (blocking app access until login)
+                const authModal = document.getElementById('auth-modal');
+                if (authModal) authModal.classList.remove('hidden');
+            }
+        })
+        .catch(err => console.error("Error checking auth session:", err));
+}
+
+function initAuthForms() {
+    const loginTab = document.getElementById('auth-tab-login');
+    const registerTab = document.getElementById('auth-tab-register');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const logoutBtn = document.getElementById('logout-btn');
+
+    if (loginTab && registerTab) {
+        loginTab.onclick = (e) => {
+            e.preventDefault();
+            loginTab.classList.add('active');
+            registerTab.classList.remove('active');
+            loginForm.classList.remove('hidden');
+            registerForm.classList.add('hidden');
+        };
+
+        registerTab.onclick = (e) => {
+            e.preventDefault();
+            registerTab.classList.add('active');
+            loginTab.classList.remove('active');
+            registerForm.classList.remove('hidden');
+            loginForm.classList.add('hidden');
+        };
+    }
+
+    if (loginForm) {
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const identifier = document.getElementById('login-identifier').value.trim();
+            const password = document.getElementById('login-password').value;
+
+            fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identifier, password })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    showToast(data.error, 'warning');
+                } else {
+                    showToast(`Welcome back, ${data.user.username}!`, 'success');
+                    loginForm.reset();
+                    checkAuthSession();
+                }
+            })
+            .catch(err => console.error("Login error:", err));
+        });
+    }
+
+    if (registerForm) {
+        registerForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = document.getElementById('reg-username').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const password = document.getElementById('reg-password').value;
+
+            fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, email, password })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    showToast(data.error, 'warning');
+                } else {
+                    showToast(`Account created! Welcome, ${data.user.username}`, 'success');
+                    registerForm.reset();
+                    checkAuthSession();
+                }
+            })
+            .catch(err => console.error("Registration error:", err));
+        });
+    }
+
+    if (logoutBtn) {
+        logoutBtn.onclick = (e) => {
+            e.preventDefault();
+            fetch('/api/auth/logout', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    showToast("Signed out successfully.", "info");
+                    checkAuthSession();
+                })
+                .catch(err => console.error("Logout error:", err));
+        };
+    }
+}
+
+// 10. User Activity Timeline Viewer
+function loadUserHistory() {
+    const refreshBtn = document.getElementById('refresh-history-btn');
+    if (refreshBtn) {
+        refreshBtn.onclick = () => loadUserHistory();
+    }
+
+    fetch('/api/user/history')
+        .then(res => res.json())
+        .then(logs => {
+            const tbody = document.getElementById('user-history-tbody');
+            if (!tbody) return;
+            tbody.innerHTML = "";
+
+            if (logs.error) {
+                tbody.innerHTML = `<tr><td colspan="3" class="text-secondary flex-center" style="padding: 20px;">Please sign in to view history.</td></tr>`;
+                return;
+            }
+
+            if (!logs || logs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="text-secondary flex-center" style="padding: 20px;">No interaction history logged yet.</td></tr>`;
+                return;
+            }
+
+            logs.forEach(log => {
+                const tr = document.createElement('tr');
+                const dateStr = new Date(log.timestamp).toLocaleString('en-US', {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+
+                let icon = '<i class="fa-solid fa-clock-rotate-left" style="color: var(--primary);"></i>';
+                if (log.action.includes('Created') || log.action.includes('Signed In')) {
+                    icon = '<i class="fa-solid fa-circle-check" style="color: var(--success);"></i>';
+                } else if (log.action.includes('Signed Out')) {
+                    icon = '<i class="fa-solid fa-right-from-bracket" style="color: var(--warning);"></i>';
+                }
+
+                tr.innerHTML = `
+                    <td><strong>#${log.log_id}</strong></td>
+                    <td>${icon} <span style="margin-left: 6px;">${log.action}</span></td>
+                    <td><span class="text-secondary sm">${dateStr}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        })
+        .catch(err => console.error("Error loading user history:", err));
+}
+
 
