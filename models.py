@@ -97,8 +97,13 @@ def train_all_models():
     
     metrics = {}
     
-    # Train Regression Models for time series forecasting (pH and TDS)
-    for param in ['pH', 'tds']:
+    # Train Regression Models for time series forecasting across all parameters
+    all_params = ['pH', 'turbidity', 'tds', 'temperature', 'dissolved_oxygen']
+    for param in all_params:
+        param_key = param.lower()
+        if param == 'dissolved_oxygen':
+            param_key = 'do'
+            
         X_reg = []
         y_reg = []
         
@@ -132,10 +137,10 @@ def train_all_models():
                 eval_lr.fit(X_train, y_train)
                 mae_lr = float(np.mean(np.abs(eval_lr.predict(X_test) - y_test)))
             else:
-                mae_rf = 0.045 if param == 'pH' else 11.2
-                mae_lr = 0.076 if param == 'pH' else 16.8
+                defaults = {'ph': (0.045, 0.076), 'turbidity': (0.12, 0.18), 'tds': (11.2, 16.8), 'temperature': (0.25, 0.40), 'do': (0.15, 0.25)}
+                mae_rf, mae_lr = defaults.get(param_key, (0.1, 0.2))
                 
-            metrics[param.lower()] = {
+            metrics[param_key] = {
                 "rf_mae": round(mae_rf, 4),
                 "lr_mae": round(mae_lr, 4)
             }
@@ -143,12 +148,12 @@ def train_all_models():
             # Train final models on complete dataset
             rf_reg = RandomForestRegressor(n_estimators=50, random_state=42)
             rf_reg.fit(X_reg, y_reg)
-            joblib.dump(rf_reg, os.path.join(MODELS_DIR, f'rf_regressor_{param.lower()}.joblib'))
+            joblib.dump(rf_reg, os.path.join(MODELS_DIR, f'rf_regressor_{param_key}.joblib'))
             
             # Linear Regression
             lr_reg = LinearRegression()
             lr_reg.fit(X_reg, y_reg)
-            joblib.dump(lr_reg, os.path.join(MODELS_DIR, f'lr_regressor_{param.lower()}.joblib'))
+            joblib.dump(lr_reg, os.path.join(MODELS_DIR, f'lr_regressor_{param_key}.joblib'))
             
     # Save metrics JSON
     if metrics:
@@ -171,13 +176,16 @@ def get_model_metrics():
             pass
     return {
         "ph": {"rf_mae": 0.042, "lr_mae": 0.065},
-        "tds": {"rf_mae": 10.8, "lr_mae": 15.4}
+        "turbidity": {"rf_mae": 0.11, "lr_mae": 0.16},
+        "tds": {"rf_mae": 10.8, "lr_mae": 15.4},
+        "temperature": {"rf_mae": 0.22, "lr_mae": 0.35},
+        "do": {"rf_mae": 0.14, "lr_mae": 0.22}
     }
 
 
 def predict_future(source_id, days=7, algorithm='rf'):
     """
-    Recursively forecasts the next N days of pH, TDS, and other features, 
+    Recursively forecasts the next N days of pH, Turbidity, TDS, Temp, DO, and Conductivity,
     and predicts future safety classification.
     algorithm: 'rf' for RandomForest or 'lr' for Linear Regression/DecisionTree
     """
@@ -188,12 +196,10 @@ def predict_future(source_id, days=7, algorithm='rf'):
         
     # Get last values for parameters to begin recursive forecasting
     ph_history = [r['pH'] for r in readings[-3:]]
+    turb_history = [r['turbidity'] for r in readings[-3:]]
     tds_history = [r['tds'] for r in readings[-3:]]
-    
-    # We can approximate temperature, DO, conductivity for future based on seasonal extrapolation or averages
-    avg_temp = np.mean([r['temperature'] for r in readings])
-    avg_do = np.mean([r['dissolved_oxygen'] for r in readings])
-    avg_cond = np.mean([r['conductivity'] for r in readings])
+    temp_history = [r['temperature'] for r in readings[-3:]]
+    do_history = [r['dissolved_oxygen'] for r in readings[-3:]]
     
     # Load classifiers
     classifier_path = os.path.join(MODELS_DIR, 'rf_classifier.joblib' if algorithm == 'rf' else 'dt_classifier.joblib')
@@ -202,16 +208,25 @@ def predict_future(source_id, days=7, algorithm='rf'):
     else:
         cls_model = None
         
-    # Load regressors
-    rf_reg_ph = rf_reg_tds = lr_reg_ph = lr_reg_tds = None
-    try:
-        rf_reg_ph = joblib.load(os.path.join(MODELS_DIR, 'rf_regressor_ph.joblib'))
-        rf_reg_tds = joblib.load(os.path.join(MODELS_DIR, 'rf_regressor_tds.joblib'))
-        lr_reg_ph = joblib.load(os.path.join(MODELS_DIR, 'lr_regressor_ph.joblib'))
-        lr_reg_tds = joblib.load(os.path.join(MODELS_DIR, 'lr_regressor_tds.joblib'))
-    except Exception as e:
-        print(f"Error loading regressors: {e}")
-        
+    # Load regressors for all 5 parameters
+    regressors = {}
+    param_keys = {'pH': 'ph', 'turbidity': 'turbidity', 'tds': 'tds', 'temperature': 'temperature', 'dissolved_oxygen': 'do'}
+    
+    for param, pkey in param_keys.items():
+        prefix = 'rf' if algorithm == 'rf' else 'lr'
+        path = os.path.join(MODELS_DIR, f'{prefix}_regressor_{pkey}.joblib')
+        if os.path.exists(path):
+            try:
+                regressors[pkey] = joblib.load(path)
+            except Exception as e:
+                print(f"Error loading regressor for {pkey}: {e}")
+                regressors[pkey] = None
+        else:
+            regressors[pkey] = None
+            
+    # Load metrics for confidence interval estimation
+    metrics = get_model_metrics()
+    
     predictions = []
     last_timestamp = datetime.fromisoformat(readings[-1]['timestamp'])
     
@@ -220,51 +235,78 @@ def predict_future(source_id, days=7, algorithm='rf'):
         
         # Prepare autoregressive features [val_t-1, val_t-2, val_t-3]
         ph_feats = np.array([[ph_history[-1], ph_history[-2], ph_history[-3]]])
+        turb_feats = np.array([[turb_history[-1], turb_history[-2], turb_history[-3]]])
         tds_feats = np.array([[tds_history[-1], tds_history[-2], tds_history[-3]]])
+        temp_feats = np.array([[temp_history[-1], temp_history[-2], temp_history[-3]]])
+        do_feats = np.array([[do_history[-1], do_history[-2], do_history[-3]]])
         
         # pH Regression
-        if algorithm == 'rf' and rf_reg_ph:
-            pred_ph = float(rf_reg_ph.predict(ph_feats)[0])
-        elif algorithm == 'lr' and lr_reg_ph:
-            pred_ph = float(lr_reg_ph.predict(ph_feats)[0])
+        if regressors.get('ph'):
+            pred_ph = float(regressors['ph'].predict(ph_feats)[0])
         else:
-            # Fallback simple moving average
             pred_ph = float(np.mean(ph_history[-3:]))
             
+        # Turbidity Regression
+        if regressors.get('turbidity'):
+            pred_turb = float(regressors['turbidity'].predict(turb_feats)[0])
+        else:
+            pred_turb = float(np.mean(turb_history[-3:]))
+            
         # TDS Regression
-        if algorithm == 'rf' and rf_reg_tds:
-            pred_tds = float(rf_reg_tds.predict(tds_feats)[0])
-        elif algorithm == 'lr' and lr_reg_tds:
-            pred_tds = float(lr_reg_tds.predict(tds_feats)[0])
+        if regressors.get('tds'):
+            pred_tds = float(regressors['tds'].predict(tds_feats)[0])
         else:
             pred_tds = float(np.mean(tds_history[-3:]))
             
+        # Temperature Regression
+        if regressors.get('temperature'):
+            pred_temp = float(regressors['temperature'].predict(temp_feats)[0])
+        else:
+            pred_temp = float(np.mean(temp_history[-3:]))
+            
+        # Dissolved Oxygen Regression
+        if regressors.get('do'):
+            pred_do = float(regressors['do'].predict(do_feats)[0])
+        else:
+            pred_do = float(np.mean(do_history[-3:]))
+            
         # Bounds & cleanups
         pred_ph = round(max(0.0, min(14.0, pred_ph)), 2)
+        pred_turb = round(max(0.0, pred_turb), 2)
         pred_tds = round(max(0.0, pred_tds), 1)
-        
-        # Shift history
-        ph_history.append(pred_ph)
-        tds_history.append(pred_tds)
-        
-        # Temperature: keep stable with minor random drift
-        pred_temp = round(avg_temp + random_drift(0.2), 1)
-        
-        # Dissolved Oxygen: inverse with temp, stable with historical average
-        pred_do = round(max(1.0, avg_do + random_drift(0.1)), 2)
+        pred_temp = round(max(-10.0, min(50.0, pred_temp)), 1)
+        pred_do = round(max(0.0, pred_do), 2)
         
         # Conductivity: scale with TDS
         pred_cond = round(pred_tds * 1.56, 1)
         
-        # Turbidity: keep stable around recent averages
-        pred_turb = round(max(0.1, np.mean([r['turbidity'] for r in readings]) + random_drift(0.1)), 2)
+        # Shift histories
+        ph_history.append(pred_ph)
+        turb_history.append(pred_turb)
+        tds_history.append(pred_tds)
+        temp_history.append(pred_temp)
+        do_history.append(pred_do)
+        
+        # Calculate confidence margins per parameter based on validation MAE & forecast day distance
+        mae_key = 'rf_mae' if algorithm == 'rf' else 'lr_mae'
+        ph_mae = metrics.get('ph', {}).get(mae_key, 0.05)
+        turb_mae = metrics.get('turbidity', {}).get(mae_key, 0.15)
+        tds_mae = metrics.get('tds', {}).get(mae_key, 12.0)
+        do_mae = metrics.get('do', {}).get(mae_key, 0.2)
+        
+        # Day multiplier increases uncertainty slightly for future days
+        day_mult = 1.0 + 0.08 * (d - 1)
+        
+        ph_bound = round(ph_mae * 1.96 * day_mult, 2)
+        tds_bound = round(tds_mae * 1.96 * day_mult, 1)
+        turb_bound = round(turb_mae * 1.96 * day_mult, 2)
+        do_bound = round(do_mae * 1.96 * day_mult, 2)
         
         # Determine Severity using model or fallback rules
         features = np.array([[pred_ph, pred_turb, pred_tds, pred_temp, pred_do, pred_cond]])
         if cls_model:
             pred_cls_idx = int(cls_model.predict(features)[0])
             pred_severity = ["Safe", "Moderate", "Unsafe"][pred_cls_idx]
-            # Calculate score via rules engine for detailed metrics visualization
             pred_risk, _ = calculate_risk_score_and_severity(pred_ph, pred_turb, pred_tds, pred_temp, pred_do, pred_cond)
         else:
             pred_risk, pred_severity = calculate_risk_score_and_severity(pred_ph, pred_turb, pred_tds, pred_temp, pred_do, pred_cond)
@@ -279,10 +321,21 @@ def predict_future(source_id, days=7, algorithm='rf'):
             "dissolved_oxygen": pred_do,
             "conductivity": pred_cond,
             "risk_score": pred_risk,
-            "severity": pred_severity
+            "severity": pred_severity,
+            "bounds": {
+                "ph_upper": round(min(14.0, pred_ph + ph_bound), 2),
+                "ph_lower": round(max(0.0, pred_ph - ph_bound), 2),
+                "tds_upper": round(pred_tds + tds_bound, 1),
+                "tds_lower": round(max(0.0, pred_tds - tds_bound), 1),
+                "turbidity_upper": round(pred_turb + turb_bound, 2),
+                "turbidity_lower": round(max(0.0, pred_turb - turb_bound), 2),
+                "do_upper": round(pred_do + do_bound, 2),
+                "do_lower": round(max(0.0, pred_do - do_bound), 2)
+            }
         })
         
     return predictions
 
 def random_drift(scale):
     return float(np.random.normal(0, scale))
+

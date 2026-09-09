@@ -10,7 +10,8 @@ let appState = {
     predictionData: [],
     isHeatmapActive: false,
     heatmapLayer: null,
-    selectionMarker: null
+    selectionMarker: null,
+    autoStreamTimer: null
 };
 
 // Chart References
@@ -19,7 +20,9 @@ let activeCharts = {
     distribution: null,
     monthlyRisk: null,
     predPh: null,
-    predTds: null
+    predTurb: null,
+    predTds: null,
+    predDo: null
 };
 
 // Initialize App
@@ -27,6 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initDate();
     initTabs();
     initForms();
+    initStandardsModal();
+    initAutoStream();
     loadDashboardData();
 });
 
@@ -64,18 +69,23 @@ function initTabs() {
 
     navItems.forEach(item => {
         item.addEventListener('click', (e) => {
-            e.preventDefault();
             const tabId = item.getAttribute('data-tab');
+            if (!tabId) return; // Skip non-tab items (e.g. Safety Standards modal trigger)
+            
+            e.preventDefault();
             
             navItems.forEach(n => n.classList.remove('active'));
             panels.forEach(p => p.classList.remove('active'));
             
             item.classList.add('active');
-            document.getElementById(`${tabId}-view`).classList.add('active');
+            const targetPanel = document.getElementById(`${tabId}-view`);
+            if (targetPanel) targetPanel.classList.add('active');
             
             // Update Headers
-            viewTitle.textContent = tabMetadata[tabId].title;
-            viewSubtitle.textContent = tabMetadata[tabId].subtitle;
+            if (tabMetadata[tabId]) {
+                viewTitle.textContent = tabMetadata[tabId].title;
+                viewSubtitle.textContent = tabMetadata[tabId].subtitle;
+            }
             
             appState.activeTab = tabId;
             
@@ -96,6 +106,76 @@ function initTabs() {
 
 // Setup Form Listeners & Upload Previews
 function initForms() {
+    // Date filter controls
+    const applyFilterBtn = document.getElementById('apply-date-filter-btn');
+    const resetFilterBtn = document.getElementById('reset-date-filter-btn');
+    
+    if (applyFilterBtn) {
+        applyFilterBtn.onclick = (e) => {
+            e.preventDefault();
+            loadTrendChartData();
+            showToast("Date filter applied to historical trends!", "info");
+        };
+    }
+    if (resetFilterBtn) {
+        resetFilterBtn.onclick = (e) => {
+            e.preventDefault();
+            document.getElementById('start-date-filter').value = '';
+            document.getElementById('end-date-filter').value = '';
+            loadTrendChartData();
+            showToast("Date filters cleared.", "info");
+        };
+    }
+
+    // CSV Export buttons
+    const exportReadingsBtn = document.getElementById('export-readings-csv-btn');
+    if (exportReadingsBtn) {
+        exportReadingsBtn.onclick = (e) => {
+            e.preventDefault();
+            if (!appState.selectedTrendSourceId) return;
+            const startDate = document.getElementById('start-date-filter')?.value || '';
+            const endDate = document.getElementById('end-date-filter')?.value || '';
+            let exportUrl = `/api/export/readings?source_id=${appState.selectedTrendSourceId}`;
+            if (startDate) exportUrl += `&start_date=${startDate}`;
+            if (endDate) exportUrl += `&end_date=${endDate}`;
+            window.location.href = exportUrl;
+            showToast("Downloading Water Readings CSV...", "success");
+        };
+    }
+
+    const exportPredsBtn = document.getElementById('export-predictions-csv-btn');
+    if (exportPredsBtn) {
+        exportPredsBtn.onclick = (e) => {
+            e.preventDefault();
+            const sourceId = document.getElementById('pred-source-select').value;
+            const algorithm = document.getElementById('pred-algo-select').value;
+            if (!sourceId) {
+                showToast("Please select a water source first.", "warning");
+                return;
+            }
+            window.location.href = `/api/export/predict?source_id=${sourceId}&algorithm=${algorithm}`;
+            showToast("Downloading AI Forecast CSV...", "success");
+        };
+    }
+
+    const exportReportsBtn = document.getElementById('export-reports-csv-btn');
+    if (exportReportsBtn) {
+        exportReportsBtn.onclick = (e) => {
+            e.preventDefault();
+            window.location.href = '/api/export/reports';
+            showToast("Downloading Community Incident Reports CSV...", "success");
+        };
+    }
+
+    // Print Executive Summary PDF Report
+    const printReportBtn = document.getElementById('print-executive-report-btn');
+    if (printReportBtn) {
+        printReportBtn.onclick = (e) => {
+            e.preventDefault();
+            window.print();
+        };
+    }
+
     // Evidence Image Upload Design change listener
     const fileInput = document.getElementById('rep-image');
     if (fileInput) {
@@ -443,7 +523,14 @@ function loadDashboardData() {
 function loadTrendChartData() {
     if (!appState.selectedTrendSourceId) return;
     
-    fetch(`/api/readings?source_id=${appState.selectedTrendSourceId}`)
+    const startDate = document.getElementById('start-date-filter')?.value || '';
+    const endDate = document.getElementById('end-date-filter')?.value || '';
+    
+    let url = `/api/readings?source_id=${appState.selectedTrendSourceId}`;
+    if (startDate) url += `&start_date=${startDate}`;
+    if (endDate) url += `&end_date=${endDate}`;
+    
+    fetch(url)
         .then(res => res.json())
         .then(readings => {
             const labels = readings.map(r => {
@@ -993,7 +1080,6 @@ function runAIPrediction() {
     if (!sourceId) return;
 
     // Load recent actuals to combine with predictions for visualization
-    // It's cooler if the line chart shows actuals (solid) leading into predictions (dotted/alternate)
     Promise.all([
         fetch(`/api/readings?source_id=${sourceId}`).then(res => res.json()),
         fetch(`/api/predict?source_id=${sourceId}&algorithm=${algorithm}`).then(res => res.json())
@@ -1017,17 +1103,24 @@ function runAIPrediction() {
         
         const combinedLabels = [...historicalLabels, ...predictedLabels];
         
-        // pH lists
+        // Parameter series
         const histPh = lastHistorical.map(h => h.pH);
         const predPh = predicted.map(p => p.pH);
         
-        // TDS lists
+        const histTurb = lastHistorical.map(h => h.turbidity);
+        const predTurb = predicted.map(p => p.turbidity);
+        
         const histTds = lastHistorical.map(h => h.tds);
         const predTds = predicted.map(p => p.tds);
+        
+        const histDo = lastHistorical.map(h => h.dissolved_oxygen);
+        const predDo = predicted.map(p => p.dissolved_oxygen);
 
         // Render predicted Charts
         drawPredChart('pred-ph-chart', 'predPh', combinedLabels, histPh, predPh, 'pH level', '#10b981');
+        drawPredChart('pred-turb-chart', 'predTurb', combinedLabels, histTurb, predTurb, 'Turbidity (NTU)', '#8b5cf6');
         drawPredChart('pred-tds-chart', 'predTds', combinedLabels, histTds, predTds, 'TDS (mg/L)', '#f59e0b');
+        drawPredChart('pred-do-chart', 'predDo', combinedLabels, histDo, predDo, 'Dissolved Oxygen (mg/L)', '#06b6d4');
 
         // Populate table records
         const tbody = document.querySelector('#prediction-table tbody');
@@ -1040,6 +1133,7 @@ function runAIPrediction() {
                 <td><strong>Day +${p.day}</strong></td>
                 <td>${dateStr}</td>
                 <td>${p.pH}</td>
+                <td>${p.turbidity} NTU</td>
                 <td>${p.tds} mg/L</td>
                 <td>${p.dissolved_oxygen} mg/L</td>
                 <td>${p.risk_score}</td>
@@ -1059,17 +1153,14 @@ function drawPredChart(canvasId, chartKey, labels, historicalData, predictedData
     
     // Build values with padded nulls so lines overlap/align properly
     const histSeries = [...historicalData];
-    // historical line runs up to index length(historical) - 1. We pad predictions with nulls.
     for (let i = 0; i < predictedData.length; i++) {
         histSeries.push(null);
     }
     
-    // predict line pads historical length with nulls, starting at last element of actuals for continuous path
     const predSeries = [];
     for (let i = 0; i < historicalData.length - 1; i++) {
         predSeries.push(null);
     }
-    // overlay last actual element to bridge lines
     predSeries.push(historicalData[historicalData.length - 1]);
     predictedData.forEach(p => predSeries.push(p));
 
@@ -1123,7 +1214,7 @@ function drawPredChart(canvasId, chartKey, labels, historicalData, predictedData
     });
 }
 
-// Community Reports page rendering
+// Community Reports page rendering & filtering
 function loadReportsFeed() {
     // Load associated sources in form select
     fetch('/api/sources')
@@ -1144,53 +1235,120 @@ function loadReportsFeed() {
         .then(res => res.json())
         .then(reports => {
             appState.reports = reports;
-            const container = document.getElementById('community-reports-list');
-            container.innerHTML = "";
             
-            if (reports.length === 0) {
-                container.innerHTML = `<div class="glass flex-center" style="padding: 40px; color: var(--text-muted);">No reports submitted yet. Clean waters!</div>`;
-                return;
-            }
+            // Wire up search & filter listeners
+            const searchInput = document.getElementById('report-search-input');
+            const statusFilter = document.getElementById('report-status-filter');
+            const issueFilter = document.getElementById('report-issue-filter');
             
-            reports.forEach(r => {
-                const card = document.createElement('div');
-                card.className = "report-card glass";
-                
-                const dateStr = new Date(r.timestamp).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-                
-                let imgHtml = "";
-                if (r.image_filename) {
-                    imgHtml = `<img src="/static/uploads/${r.image_filename}" class="report-image-preview" alt="Evidence image" />`;
-                }
-                
-                card.innerHTML = `
-                    <div class="report-card-header">
-                        <div class="reporter-meta">
-                            <strong>${r.reporter_name}</strong>
-                            <span>${dateStr}</span>
-                        </div>
-                        <span class="report-tag">${r.issue_type}</span>
-                    </div>
-                    <p>${r.description}</p>
-                    ${imgHtml}
-                    <div class="report-meta-footer">
-                        <div class="report-location-badge">
-                            <i class="fa-solid fa-location-dot"></i>
-                            <span>Coordinates: ${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}</span>
-                        </div>
-                    </div>
-                `;
-                container.appendChild(card);
-            });
+            const filterHandler = () => filterAndRenderReports();
+            
+            if (searchInput) searchInput.oninput = filterHandler;
+            if (statusFilter) statusFilter.onchange = filterHandler;
+            if (issueFilter) issueFilter.onchange = filterHandler;
+            
+            filterAndRenderReports();
         })
         .catch(err => console.error("Error loading community reports feed:", err));
 }
+
+function filterAndRenderReports() {
+    const query = document.getElementById('report-search-input')?.value.toLowerCase() || '';
+    const statusVal = document.getElementById('report-status-filter')?.value || 'ALL';
+    const issueVal = document.getElementById('report-issue-filter')?.value || 'ALL';
+    
+    let filtered = appState.reports.filter(r => {
+        const matchesQuery = !query || 
+            (r.description && r.description.toLowerCase().includes(query)) ||
+            (r.reporter_name && r.reporter_name.toLowerCase().includes(query)) ||
+            (r.issue_type && r.issue_type.toLowerCase().includes(query));
+            
+        const matchesStatus = statusVal === 'ALL' || (r.status || 'Pending') === statusVal;
+        const matchesIssue = issueVal === 'ALL' || r.issue_type === issueVal;
+        
+        return matchesQuery && matchesStatus && matchesIssue;
+    });
+    
+    renderReportsList(filtered);
+}
+
+function renderReportsList(reports) {
+    const container = document.getElementById('community-reports-list');
+    container.innerHTML = "";
+    
+    if (reports.length === 0) {
+        container.innerHTML = `<div class="glass flex-center" style="padding: 40px; color: var(--text-muted);">No incident reports match your current filter.</div>`;
+        return;
+    }
+    
+    reports.forEach(r => {
+        const card = document.createElement('div');
+        card.className = "report-card glass";
+        
+        const dateStr = new Date(r.timestamp).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        const status = r.status || 'Pending';
+        let statusBadgeClass = 'warning';
+        if (status === 'Investigating') statusBadgeClass = 'primary';
+        if (status === 'Resolved') statusBadgeClass = 'safe';
+        
+        let imgHtml = "";
+        if (r.image_filename) {
+            imgHtml = `<img src="/static/uploads/${r.image_filename}" class="report-image-preview" alt="Evidence image" />`;
+        }
+        
+        card.innerHTML = `
+            <div class="report-card-header">
+                <div class="reporter-meta">
+                    <strong>${r.reporter_name}</strong>
+                    <span>${dateStr}</span>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                    <span class="report-tag">${r.issue_type}</span>
+                    <span class="badge ${statusBadgeClass}">${status}</span>
+                </div>
+            </div>
+            <p>${r.description}</p>
+            ${imgHtml}
+            <div class="report-meta-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div class="report-location-badge">
+                    <i class="fa-solid fa-location-dot"></i>
+                    <span>Coordinates: ${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}</span>
+                </div>
+                <div class="report-status-actions" style="display: flex; gap: 6px;">
+                    ${status !== 'Investigating' ? `<button class="btn btn-sm btn-secondary" onclick="updateReportStatus(${r.report_id}, 'Investigating')"><i class="fa-solid fa-magnifying-glass"></i> Investigating</button>` : ''}
+                    ${status !== 'Resolved' ? `<button class="btn btn-sm btn-primary" onclick="updateReportStatus(${r.report_id}, 'Resolved')"><i class="fa-solid fa-circle-check"></i> Mark Resolved</button>` : ''}
+                </div>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+// Global window function for updating report status
+window.updateReportStatus = function(reportId, newStatus) {
+    fetch(`/api/reports/${reportId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            showToast("Error updating status: " + data.error, "warning");
+        } else {
+            showToast(`Report #${reportId} status set to '${newStatus}'!`, "success");
+            loadReportsFeed();
+        }
+    })
+    .catch(err => console.error("Error updating report status:", err));
+};
 
 // 5. Render Heatmap Overlay
 function renderHeatmap() {
@@ -1235,19 +1393,34 @@ function loadModelMetrics() {
     fetch('/api/metrics')
         .then(res => res.json())
         .then(metrics => {
-            document.getElementById('rf-ph-mae').textContent = metrics.ph.rf_mae;
-            document.getElementById('rf-tds-mae').textContent = metrics.tds.rf_mae + " mg/L";
+            if (metrics.ph) {
+                document.getElementById('rf-ph-mae').textContent = metrics.ph.rf_mae;
+                document.getElementById('lr-ph-mae').textContent = metrics.ph.lr_mae;
+            }
+            if (metrics.turbidity) {
+                document.getElementById('rf-turb-mae').textContent = metrics.turbidity.rf_mae + " NTU";
+                document.getElementById('lr-turb-mae').textContent = metrics.turbidity.lr_mae + " NTU";
+            }
+            if (metrics.tds) {
+                document.getElementById('rf-tds-mae').textContent = metrics.tds.rf_mae + " mg/L";
+                document.getElementById('lr-tds-mae').textContent = metrics.tds.lr_mae + " mg/L";
+            }
+            if (metrics.do) {
+                document.getElementById('rf-do-mae').textContent = metrics.do.rf_mae + " mg/L";
+                document.getElementById('lr-do-mae').textContent = metrics.do.lr_mae + " mg/L";
+            }
+            if (metrics.temperature) {
+                document.getElementById('rf-temp-mae').textContent = metrics.temperature.rf_mae + " °C";
+                document.getElementById('lr-temp-mae').textContent = metrics.temperature.lr_mae + " °C";
+            }
             
-            document.getElementById('lr-ph-mae').textContent = metrics.ph.lr_mae;
-            document.getElementById('lr-tds-mae').textContent = metrics.tds.lr_mae + " mg/L";
-            
-            const phBest = metrics.ph.rf_mae < metrics.ph.lr_mae ? "Random Forest" : "Linear Regression";
-            const tdsBest = metrics.tds.rf_mae < metrics.tds.lr_mae ? "Random Forest" : "Linear Regression";
+            const phBest = metrics.ph?.rf_mae < metrics.ph?.lr_mae ? "Random Forest" : "Linear Regression";
+            const tdsBest = metrics.tds?.rf_mae < metrics.tds?.lr_mae ? "Random Forest" : "Linear Regression";
             
             let recommendationText = "";
             if (phBest === tdsBest) {
                 const pct = Math.round(((metrics.tds.lr_mae - metrics.tds.rf_mae) / metrics.tds.lr_mae) * 100);
-                recommendationText = `${phBest} is recommended (${pct}% lower validation MAE error on TDS)`;
+                recommendationText = `${phBest} is recommended (${pct}% lower validation MAE error overall)`;
             } else {
                 recommendationText = `Random Forest is recommended for TDS, Linear Regression for pH.`;
             }
@@ -1256,3 +1429,124 @@ function loadModelMetrics() {
         })
         .catch(err => console.error("Error loading model metrics:", err));
 }
+
+// 7. WHO & EPA Safety Standards Modal Handler
+function initStandardsModal() {
+    const openBtn = document.getElementById('open-standards-modal-btn');
+    const closeBtn = document.getElementById('close-standards-modal-btn');
+    const modal = document.getElementById('standards-modal');
+
+    if (openBtn && modal) {
+        openBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            modal.classList.remove('hidden');
+        });
+    }
+
+    if (closeBtn && modal) {
+        closeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            modal.classList.add('hidden');
+        });
+    }
+
+    // Support pressing Escape key to dismiss modal
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+            modal.classList.add('hidden');
+        }
+    });
+
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+            }
+        });
+    }
+}
+
+// 8. IoT Telemetry Auto-Streaming Loop
+function initAutoStream() {
+    const toggleBtn = document.getElementById('toggle-autostream-btn');
+    if (!toggleBtn) return;
+
+    toggleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+
+        if (appState.autoStreamTimer) {
+            // Stop streaming
+            clearInterval(appState.autoStreamTimer);
+            appState.autoStreamTimer = null;
+            toggleBtn.innerHTML = '<i class="fa-solid fa-play"></i> Auto';
+            toggleBtn.className = 'btn btn-secondary';
+            toggleBtn.title = 'Auto Stream Sensor Data';
+            showToast("IoT Telemetry Auto-Streaming paused.", "info");
+        } else {
+            // Start streaming
+            toggleBtn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
+            toggleBtn.className = 'btn btn-danger';
+            toggleBtn.title = 'Stop Auto Streaming';
+            showToast("IoT Telemetry Auto-Streaming started (ingesting every 3.5s)...", "success");
+
+            // Execute immediately once, then repeat
+            streamSingleSensorReading();
+            appState.autoStreamTimer = setInterval(streamSingleSensorReading, 3500);
+        }
+    });
+}
+
+function streamSingleSensorReading() {
+    const simSelect = document.getElementById('sim-source-select');
+    if (!simSelect || !simSelect.options || simSelect.options.length === 0) return;
+
+    const sourceIds = Array.from(simSelect.options).map(o => o.value).filter(Boolean);
+    if (sourceIds.length === 0) return;
+
+    const randomSourceId = parseInt(sourceIds[Math.floor(Math.random() * sourceIds.length)]);
+
+    // Generate realistic fluctuating telemetry values
+    const phVal = parseFloat((6.8 + (Math.random() * 1.8)).toFixed(1)); // 6.8 - 8.6
+    const turbVal = parseFloat((0.8 + (Math.random() * 4.5)).toFixed(1)); // 0.8 - 5.3 NTU
+    const tdsVal = Math.round(140 + Math.random() * 320); // 140 - 460 mg/L
+    const tempVal = parseFloat((14.0 + (Math.random() * 8.0)).toFixed(1)); // 14.0 - 22.0 °C
+    const doVal = parseFloat((6.5 + (Math.random() * 3.0)).toFixed(1)); // 6.5 - 9.5 mg/L
+    const condVal = Math.round(tdsVal * 1.56);
+
+    const payload = {
+        source_id: randomSourceId,
+        pH: phVal,
+        turbidity: turbVal,
+        tds: tdsVal,
+        temperature: tempVal,
+        dissolved_oxygen: doVal,
+        conductivity: condVal
+    };
+
+    fetch('/api/readings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (!data.error) {
+            showToast(`[IoT Telemetry] Live Stream (Source #${randomSourceId}): pH=${phVal}, Turb=${turbVal} NTU, TDS=${tdsVal} mg/L`, "info");
+            
+            // Dynamic refresh active tab views
+            if (appState.activeTab === 'dashboard') {
+                loadDashboardData();
+            } else if (appState.activeTab === 'map') {
+                if (appState.isHeatmapActive) {
+                    renderHeatmap();
+                } else {
+                    renderMapMarkers();
+                }
+            }
+        }
+    })
+    .catch(err => console.error("Auto stream ingestion error:", err));
+}
+

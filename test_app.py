@@ -83,7 +83,11 @@ class WaterQualitySystemTestCase(unittest.TestCase):
         self.assertEqual(len(preds_rf), 7)
         self.assertEqual(preds_rf[0]['day'], 1)
         self.assertIn('pH', preds_rf[0])
+        self.assertIn('turbidity', preds_rf[0])
         self.assertIn('tds', preds_rf[0])
+        self.assertIn('temperature', preds_rf[0])
+        self.assertIn('dissolved_oxygen', preds_rf[0])
+        self.assertIn('bounds', preds_rf[0])
         self.assertIn('severity', preds_rf[0])
         
         preds_lr = models.predict_future(sid, days=7, algorithm='lr')
@@ -161,5 +165,43 @@ class WaterQualitySystemTestCase(unittest.TestCase):
         self.assertEqual(an_data['total_sources'], 1)
         self.assertEqual(an_data['total_reports'], 1)
 
+        # 8. Test CSV Exports
+        res_exp_read = self.client.get(f'/api/export/readings?source_id={sid}')
+        self.assertEqual(res_exp_read.status_code, 200)
+        self.assertIn('text/csv', res_exp_read.headers.get('Content-Type'))
+        self.assertIn(b'pH', res_exp_read.data)
+
+        res_exp_reports = self.client.get('/api/export/reports')
+        self.assertEqual(res_exp_reports.status_code, 200)
+        self.assertIn('text/csv', res_exp_reports.headers.get('Content-Type'))
+        self.assertIn(b'Water discoloration', res_exp_reports.data)
+
+        # 9. Test PATCH /api/reports/<id>/status
+        rep_id = reports_list[0]['report_id']
+        res_patch = self.client.patch(f'/api/reports/{rep_id}/status',
+                                      data=json.dumps({"status": "Resolved"}),
+                                      content_type='application/json')
+        self.assertEqual(res_patch.status_code, 200)
+        
+        # Verify status changed
+        res_rep_get2 = self.client.get('/api/reports')
+        updated_reports = json.loads(res_rep_get2.data)
+        self.assertEqual(updated_reports[0]['status'], "Resolved")
+
+        # 10. Test GET /api/health (System Health Diagnostic Endpoint)
+        res_health = self.client.get('/api/health')
+        self.assertEqual(res_health.status_code, 200)
+        health_data = json.loads(res_health.data)
+        self.assertEqual(health_data['status'], "healthy")
+        self.assertEqual(health_data['database'], "connected")
+        self.assertGreaterEqual(health_data['total_sources'], 1)
+
+        # 11. Test GET /api/export/predict
+        res_exp_pred = self.client.get(f'/api/export/predict?source_id={sid}&algorithm=rf')
+        self.assertEqual(res_exp_pred.status_code, 200)
+        self.assertIn('text/csv', res_exp_pred.headers.get('Content-Type'))
+        self.assertIn(b'Forecast Day', res_exp_pred.data)
+
 if __name__ == '__main__':
     unittest.main()
+

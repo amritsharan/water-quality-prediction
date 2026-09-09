@@ -52,10 +52,22 @@ def init_db():
             latitude REAL NOT NULL,
             longitude REAL NOT NULL,
             image_filename TEXT,
+            status TEXT DEFAULT 'Pending',
             timestamp TEXT NOT NULL,
             FOREIGN KEY (source_id) REFERENCES Water_Source(source_id)
         )
     ''')
+    
+    # Create Indexes for high-performance time series and source queries
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_readings_source_ts ON Water_Readings (source_id, timestamp DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reports_source ON Community_Reports (source_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_reports_timestamp ON Community_Reports (timestamp DESC)')
+    
+    # Schema migration check: add status column if existing DB lacks it
+    cursor.execute("PRAGMA table_info(Community_Reports)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'status' not in columns:
+        cursor.execute("ALTER TABLE Community_Reports ADD COLUMN status TEXT DEFAULT 'Pending'")
     
     conn.commit()
     conn.close()
@@ -122,15 +134,26 @@ def get_all_reports():
     conn.close()
     return reports
 
-def add_report(reporter_name, source_id, issue_type, description, latitude, longitude, image_filename=None):
+def add_report(reporter_name, source_id, issue_type, description, latitude, longitude, image_filename=None, status='Pending'):
     timestamp = datetime.utcnow().isoformat()
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO Community_Reports (reporter_name, source_id, issue_type, description, latitude, longitude, image_filename, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (reporter_name, source_id, issue_type, description, latitude, longitude, image_filename, timestamp))
+        INSERT INTO Community_Reports (reporter_name, source_id, issue_type, description, latitude, longitude, image_filename, status, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (reporter_name, source_id, issue_type, description, latitude, longitude, image_filename, status, timestamp))
     report_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return report_id
+
+def update_report_status(report_id, new_status):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE Community_Reports SET status = ? WHERE report_id = ?
+    ''', (new_status, report_id))
+    rows_affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows_affected > 0

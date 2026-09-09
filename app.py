@@ -89,19 +89,33 @@ def handle_sources():
         sid = database.add_source(name, location, source_type, float(latitude), float(longitude))
         return jsonify({"message": "Source added successfully", "source_id": sid}), 201
 
+import io
+import csv
+from flask import Response
+
 # Endpoint to get/create readings
 @app.route('/api/readings', methods=['GET', 'POST'])
 def handle_readings():
     if request.method == 'GET':
         source_id = request.args.get('source_id')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
         if not source_id:
             return jsonify({"error": "source_id parameter is required"}), 400
         readings = database.get_readings_for_source(int(source_id))
         
+        # Apply date filtering if provided
+        if start_date:
+            readings = [r for r in readings if r['timestamp'][:10] >= start_date]
+        if end_date:
+            readings = [r for r in readings if r['timestamp'][:10] <= end_date]
+        
         # Calculate risk scores on the fly for history
         for r in readings:
             r['risk_score'], r['severity'] = models.calculate_risk_score_and_severity(
-                r['pH'], r['turbidity'], r['tds'], r['temperature'], r['dissolved_oxygen'], r['conductivity']
+                r['pH'], r['turbidity'], r['tds'], 
+                r['temperature'], r['dissolved_oxygen'], r['conductivity']
             )
         return jsonify(readings)
         
@@ -140,6 +154,88 @@ def handle_predict():
     preds = models.predict_future(int(source_id), days=7, algorithm=algorithm)
     return jsonify(preds)
 
+# CSV Export: Historical Readings
+@app.route('/api/export/readings', methods=['GET'])
+def export_readings_csv():
+    source_id = request.args.get('source_id')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not source_id:
+        return jsonify({"error": "source_id is required"}), 400
+        
+    source = database.get_source_by_id(int(source_id))
+    source_name = source['name'] if source else f"source_{source_id}"
+    readings = database.get_readings_for_source(int(source_id))
+    
+    if start_date:
+        readings = [r for r in readings if r['timestamp'][:10] >= start_date]
+    if end_date:
+        readings = [r for r in readings if r['timestamp'][:10] <= end_date]
+        
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Reading ID', 'Source ID', 'Timestamp', 'pH', 'Turbidity (NTU)', 'TDS (mg/L)', 'Temp (°C)', 'DO (mg/L)', 'Conductivity', 'Risk Score', 'Severity'])
+    
+    for r in readings:
+        risk, sev = models.calculate_risk_score_and_severity(r['pH'], r['turbidity'], r['tds'], r['temperature'], r['dissolved_oxygen'], r['conductivity'])
+        writer.writerow([r['reading_id'], r['source_id'], r['timestamp'], r['pH'], r['turbidity'], r['tds'], r['temperature'], r['dissolved_oxygen'], r['conductivity'], risk, sev])
+        
+    output.seek(0)
+    clean_filename = f"{source_name.replace(' ', '_').lower()}_readings.csv"
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={"Content-Disposition": f"attachment; filename={clean_filename}"}
+    )
+
+# CSV Export: AI Forecast Predictions
+@app.route('/api/export/predict', methods=['GET'])
+def export_predict_csv():
+    source_id = request.args.get('source_id')
+    algorithm = request.args.get('algorithm', 'rf')
+    
+    if not source_id:
+        return jsonify({"error": "source_id is required"}), 400
+        
+    source = database.get_source_by_id(int(source_id))
+    source_name = source['name'] if source else f"source_{source_id}"
+    preds = models.predict_future(int(source_id), days=7, algorithm=algorithm)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Forecast Day', 'Timestamp', 'Predicted pH', 'Predicted Turbidity (NTU)', 'Predicted TDS (mg/L)', 'Predicted Temp (°C)', 'Predicted DO (mg/L)', 'Risk Score', 'Severity'])
+    
+    for p in preds:
+        writer.writerow([p['day'], p['timestamp'], p['pH'], p['turbidity'], p['tds'], p['temperature'], p['dissolved_oxygen'], p['risk_score'], p['severity']])
+        
+    output.seek(0)
+    clean_filename = f"{source_name.replace(' ', '_').lower()}_ai_forecast.csv"
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={"Content-Disposition": f"attachment; filename={clean_filename}"}
+    )
+
+# CSV Export: Community Reports
+@app.route('/api/export/reports', methods=['GET'])
+def export_reports_csv():
+    reports = database.get_all_reports()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Report ID', 'Reporter Name', 'Source ID', 'Issue Type', 'Description', 'Latitude', 'Longitude', 'Status', 'Timestamp'])
+    
+    for r in reports:
+        writer.writerow([r['report_id'], r['reporter_name'], r['source_id'] or '', r['issue_type'], r['description'], r['latitude'], r['longitude'], r.get('status', 'Pending'), r['timestamp']])
+        
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={"Content-Disposition": "attachment; filename=community_reports.csv"}
+    )
+
 # Endpoint for Model Evaluation Metrics
 @app.route('/api/metrics', methods=['GET'])
 def get_model_metrics():
@@ -172,7 +268,6 @@ def handle_reports():
             file = request.files['image']
             if file and file.filename != '' and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
-                # Append a unique ID to prevent collisions
                 unique_filename = f"{uuid.uuid4().hex}_{filename}"
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_filename))
                 image_filename = unique_filename
@@ -184,6 +279,21 @@ def handle_reports():
             float(latitude), float(longitude), image_filename
         )
         return jsonify({"message": "Report submitted successfully", "report_id": rid}), 201
+
+# Endpoint to update report status (Pending, Investigating, Resolved)
+@app.route('/api/reports/<int:report_id>/status', methods=['PATCH'])
+def update_report_status_route(report_id):
+    data = request.get_json() or {}
+    new_status = data.get('status')
+    
+    if new_status not in ['Pending', 'Investigating', 'Resolved']:
+        return jsonify({"error": "Invalid status value"}), 400
+        
+    updated = database.update_report_status(report_id, new_status)
+    if not updated:
+        return jsonify({"error": "Report not found"}), 404
+        
+    return jsonify({"message": f"Report #{report_id} status updated to '{new_status}'"}), 200
 
 # Endpoint to serve uploaded images safely
 @app.route('/static/uploads/<filename>')
@@ -265,6 +375,32 @@ def get_analytics():
         "total_reports": len(reports),
         "monthly_risk_trends": monthly_averages
     })
+
+# System Health & Diagnostic Status Endpoint
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    try:
+        sources_count = len(database.get_all_sources())
+        readings_count = len(database.get_all_readings())
+        reports_count = len(database.get_all_reports())
+        binaries_exist = False
+        if os.path.exists(models.MODELS_DIR):
+            binaries_exist = len(os.listdir(models.MODELS_DIR)) > 0
+        
+        return jsonify({
+            "status": "healthy",
+            "database": "connected",
+            "total_sources": sources_count,
+            "total_readings": readings_count,
+            "total_reports": reports_count,
+            "models_trained": binaries_exist,
+            "timestamp": datetime.now().isoformat()
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

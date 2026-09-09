@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Q-NEXUS | Water Quality Monitoring & Prediction</title>
+    <title>Water Quality Monitoring & Prediction System</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,8 +24,8 @@
             <div class="brand">
                 <i class="fa-solid fa-droplet brand-icon"></i>
                 <div class="brand-text">
-                    <h1>Q-NEXUS</h1>
-                    <span>Water Quality Monitor</span>
+                    <h1>Water Quality</h1>
+                    <span>Monitoring & Prediction</span>
                 </div>
             </div>
             <nav class="nav-menu">
@@ -45,6 +45,10 @@
                     <i class="fa-solid fa-circle-exclamation"></i>
                     <span>Community reports</span>
                 </a>
+                <a href="#" id="open-standards-modal-btn" class="nav-item">
+                    <i class="fa-solid fa-book-medical"></i>
+                    <span>Safety Standards</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <div class="status-indicator">
@@ -62,7 +66,8 @@
                     <h2 id="view-title">Dashboard Overview</h2>
                     <p id="view-subtitle" class="text-secondary">Real-time water quality indices, anomalies, and aggregate data.</p>
                 </div>
-                <div class="header-right">
+                <div class="header-right" style="display: flex; gap: 10px; align-items: center;">
+                    <button id="print-executive-report-btn" class="btn btn-sm btn-secondary" title="Export PDF Executive Summary Report"><i class="fa-solid fa-file-pdf"></i> Print Executive Report</button>
                     <div class="date-badge">
                         <i class="fa-regular fa-calendar"></i>
                         <span id="current-date">June 21, 2026</span>
@@ -125,18 +130,26 @@
                     <!-- Charts Grid -->
                     <div class="charts-grid">
                         <div class="chart-card glass span-2">
-                            <div class="chart-header">
+                            <div class="chart-header" style="flex-wrap: wrap; gap: 10px;">
                                 <h4>Historical Parameter Trends</h4>
-                                <div class="chart-actions">
+                                <div class="chart-actions" style="flex-wrap: wrap; gap: 8px;">
                                     <select id="trend-source-select" class="custom-select">
                                         <!-- Sources loaded dynamically -->
                                     </select>
+                                    <div class="date-filter-group" style="display: flex; gap: 5px; align-items: center;">
+                                        <input type="date" id="start-date-filter" class="form-control sm-input" title="Start Date">
+                                        <span style="color: var(--text-muted); font-size: 11px;">to</span>
+                                        <input type="date" id="end-date-filter" class="form-control sm-input" title="End Date">
+                                        <button id="apply-date-filter-btn" class="btn btn-sm btn-secondary" title="Apply Filter"><i class="fa-solid fa-filter"></i></button>
+                                        <button id="reset-date-filter-btn" class="btn btn-sm btn-secondary" title="Reset Dates"><i class="fa-solid fa-rotate-left"></i></button>
+                                    </div>
                                     <div class="btn-group">
                                         <button class="btn btn-sm btn-tab active" data-param="pH">pH</button>
                                         <button class="btn btn-sm btn-tab" data-param="turbidity">Turbidity</button>
                                         <button class="btn btn-sm btn-tab" data-param="tds">TDS</button>
                                         <button class="btn btn-sm btn-tab" data-param="dissolved_oxygen">DO</button>
                                     </div>
+                                    <button id="export-readings-csv-btn" class="btn btn-sm btn-primary" title="Download Readings CSV"><i class="fa-solid fa-file-csv"></i> Export CSV</button>
                                 </div>
                             </div>
                             <div class="chart-wrapper">
@@ -251,7 +264,10 @@
                                                 <input type="number" step="1" id="sim-cond" value="280" class="form-control" required>
                                             </div>
                                         </div>
-                                        <button type="submit" class="btn btn-primary w-full" style="margin-top: 10px;"><i class="fa-solid fa-microchip"></i> Push Sensor Data</button>
+                                        <div style="display: flex; gap: 8px; margin-top: 10px;">
+                                            <button type="submit" class="btn btn-primary" style="flex: 2;"><i class="fa-solid fa-microchip"></i> Push Sensor Data</button>
+                                            <button type="button" id="toggle-autostream-btn" class="btn btn-secondary" style="flex: 1;" title="Auto Stream Sensor Data"><i class="fa-solid fa-play"></i> Auto</button>
+                                        </div>
                                     </form>
                                 </div>
 
@@ -335,6 +351,7 @@
                                 </select>
                             </div>
                             <button id="run-prediction-btn" class="btn btn-primary h-form"><i class="fa-solid fa-gears"></i> Predict 7-Day Trend</button>
+                            <button id="export-predictions-csv-btn" class="btn btn-secondary h-form" title="Download Predictions CSV"><i class="fa-solid fa-file-csv"></i> Export CSV</button>
                         </div>
                     </div>
 
@@ -342,19 +359,25 @@
                         <!-- AI Engine Performance Metrics -->
                         <div class="chart-card glass span-2" style="height: auto; padding: 20px;">
                             <div class="chart-header" style="margin-bottom: 10px;">
-                                <h4>AI Engine Performance Validation</h4>
+                                <h4>AI Engine Performance Validation (Multi-Parameter MAE)</h4>
                                 <span class="badge safe" id="metrics-recommendation">Determining best model...</span>
                             </div>
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px;">
                                 <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px; border: 1px solid var(--border-glass);">
                                     <h5 style="margin-bottom: 10px; color: var(--primary);"><i class="fa-solid fa-brain"></i> Random Forest Regressor</h5>
-                                    <div class="map-popup-row"><strong>pH Mean Absolute Error (MAE):</strong> <span id="rf-ph-mae">-</span></div>
-                                    <div class="map-popup-row"><strong>TDS Mean Absolute Error (MAE):</strong> <span id="rf-tds-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>pH MAE:</strong> <span id="rf-ph-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>Turbidity MAE:</strong> <span id="rf-turb-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>TDS MAE:</strong> <span id="rf-tds-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>DO MAE:</strong> <span id="rf-do-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>Temp MAE:</strong> <span id="rf-temp-mae">-</span></div>
                                 </div>
                                 <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px; border: 1px solid var(--border-glass);">
                                     <h5 style="margin-bottom: 10px; color: var(--success);"><i class="fa-solid fa-chart-line"></i> Linear Regression Model</h5>
-                                    <div class="map-popup-row"><strong>pH Mean Absolute Error (MAE):</strong> <span id="lr-ph-mae">-</span></div>
-                                    <div class="map-popup-row"><strong>TDS Mean Absolute Error (MAE):</strong> <span id="lr-tds-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>pH MAE:</strong> <span id="lr-ph-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>Turbidity MAE:</strong> <span id="lr-turb-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>TDS MAE:</strong> <span id="lr-tds-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>DO MAE:</strong> <span id="lr-do-mae">-</span></div>
+                                    <div class="map-popup-row"><strong>Temp MAE:</strong> <span id="lr-temp-mae">-</span></div>
                                 </div>
                             </div>
                         </div>
@@ -368,10 +391,26 @@
                         </div>
                         <div class="chart-card glass">
                             <div class="chart-header">
+                                <h4>Forecasted Turbidity (NTU) Trend</h4>
+                            </div>
+                            <div class="chart-wrapper">
+                                <canvas id="pred-turb-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card glass">
+                            <div class="chart-header">
                                 <h4>Forecasted TDS (mg/L) Trend</h4>
                             </div>
                             <div class="chart-wrapper">
                                 <canvas id="pred-tds-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card glass">
+                            <div class="chart-header">
+                                <h4>Forecasted Dissolved Oxygen (mg/L) Trend</h4>
+                            </div>
+                            <div class="chart-wrapper">
+                                <canvas id="pred-do-chart"></canvas>
                             </div>
                         </div>
                         <div class="chart-card glass span-2">
@@ -385,6 +424,7 @@
                                             <th>Forecast Day</th>
                                             <th>Date</th>
                                             <th>Predicted pH</th>
+                                            <th>Predicted Turbidity</th>
                                             <th>Predicted TDS</th>
                                             <th>Predicted DO</th>
                                             <th>Risk Score</th>
@@ -393,7 +433,7 @@
                                     </thead>
                                     <tbody>
                                         <tr>
-                                            <td colspan="7" class="text-center text-secondary">Select a source and click 'Predict' to run forecasts.</td>
+                                            <td colspan="8" class="text-center text-secondary">Select a source and click 'Predict' to run forecasts.</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -464,7 +504,36 @@
 
                         <!-- Active Reports Feed -->
                         <div class="reports-feed-container">
-                            <h3>Active Incidents & Reports Feed</h3>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                                <h3>Active Incidents & Reports Feed</h3>
+                                <button id="export-reports-csv-btn" class="btn btn-sm btn-secondary" title="Download Reports CSV"><i class="fa-solid fa-file-csv"></i> Export Reports CSV</button>
+                            </div>
+                            
+                            <!-- Search & Filter Controls -->
+                            <div class="reports-filter-bar" style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                                <div style="flex: 2; position: relative;">
+                                    <input type="text" id="report-search-input" class="form-control" placeholder="Search reports by description or reporter name..." style="padding-left: 32px;">
+                                    <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 10px; top: 12px; color: var(--text-muted); font-size: 13px;"></i>
+                                </div>
+                                <div style="flex: 1; min-width: 130px;">
+                                    <select id="report-status-filter" class="custom-select w-full">
+                                        <option value="ALL">All Statuses</option>
+                                        <option value="Pending">Pending</option>
+                                        <option value="Investigating">Investigating</option>
+                                        <option value="Resolved">Resolved</option>
+                                    </select>
+                                </div>
+                                <div style="flex: 1; min-width: 140px;">
+                                    <select id="report-issue-filter" class="custom-select w-full">
+                                        <option value="ALL">All Issues</option>
+                                        <option value="Water discoloration">Water discoloration</option>
+                                        <option value="Bad smell">Bad smell</option>
+                                        <option value="Dead fish">Dead fish</option>
+                                        <option value="Industrial waste">Industrial waste</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div class="reports-list" id="community-reports-list">
                                 <!-- Loaded dynamically -->
                             </div>
@@ -474,6 +543,63 @@
 
             </div>
         </main>
+    </div>
+
+    <!-- WHO / EPA Water Safety Standards Modal -->
+    <div id="standards-modal" class="modal-overlay hidden">
+        <div class="modal-card glass">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-book-medical" style="color: var(--primary);"></i> WHO & EPA Water Quality Thresholds</h3>
+                <button type="button" id="close-standards-modal-btn" class="btn btn-sm btn-icon-only btn-secondary" aria-label="Close modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-secondary sm" style="margin-bottom: 15px;">Reference safe ranges established by the World Health Organization (WHO) and Environmental Protection Agency (EPA) for potable and aquatic water sources.</p>
+                <div class="table-wrapper">
+                    <table class="custom-table">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Safe Range</th>
+                                <th>Danger Threshold</th>
+                                <th>Impact of Exceedance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>pH Level</strong></td>
+                                <td>6.5 – 8.5</td>
+                                <td>&lt; 6.5 or &gt; 8.5</td>
+                                <td>Corrosive water, metal toxicity leaching, digestive irritation.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Total Dissolved Solids (TDS)</strong></td>
+                                <td>&le; 500 mg/L</td>
+                                <td>&gt; 500 mg/L</td>
+                                <td>Elevated salinity, mineral buildup, kidney load, unpleasant taste.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Turbidity</strong></td>
+                                <td>&le; 5.0 NTU</td>
+                                <td>&gt; 5.0 NTU</td>
+                                <td>Pathogen protection shield, microbial contamination risk.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Dissolved Oxygen (DO)</strong></td>
+                                <td>&ge; 7.0 mg/L</td>
+                                <td>&lt; 4.0 mg/L</td>
+                                <td>Aquatic hypoxia, fish suffocations, anaerobic odor development.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Electrical Conductivity</strong></td>
+                                <td>&le; 800 &mu;S/cm</td>
+                                <td>&gt; 1000 &mu;S/cm</td>
+                                <td>Indicates heavy ionic dissolved contaminants or runoff.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Leaflet Map JS -->
