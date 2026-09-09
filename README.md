@@ -125,5 +125,29 @@ python -m unittest test_app.py
 
 ---
 
+## 🌐 Production Cloud Deployment Guide
+
+### Option 1: Render (Recommended - Free Web Service)
+1. Sign in to [Render](https://render.com) and connect your GitHub account.
+2. Click **New +** ➔ **Web Service**.
+3. Select the repository: `amritsharan/water-quality-prediction`.
+4. Render will automatically detect `render.yaml` or you can configure manually:
+   - **Environment**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `gunicorn app:app`
+5. Click **Create Web Service**. Render will deploy your live app and issue a public URL (e.g., `https://water-quality-prediction.onrender.com`).
+
+### Option 2: Vercel
+1. Import repository `amritsharan/water-quality-prediction` into [Vercel](https://vercel.com).
+2. Vercel will automatically parse `vercel.json`.
+3. Click **Deploy**.
+
+### Option 3: Railway / Heroku
+1. Connect your GitHub repository on Railway or Heroku.
+2. The platform will automatically execute using the provided `Procfile` (`web: gunicorn app:app`).
+
+---
+
 ## 📄 License
 This project is open-source under the MIT License.
+
