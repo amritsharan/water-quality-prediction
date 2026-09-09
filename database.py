@@ -2,7 +2,10 @@ import sqlite3
 import os
 from datetime import datetime
 
-DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'water_quality.db')
+if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+    DATABASE_PATH = '/tmp/water_quality.db'
+else:
+    DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'water_quality.db')
 
 def get_db_connection():
     conn = sqlite3.connect(DATABASE_PATH)

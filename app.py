@@ -13,7 +13,11 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'water-quality-secret-key-2026-secure')
 
 # Configure upload folder
-UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
+if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+    UPLOAD_FOLDER = '/tmp/uploads'
+else:
+    UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload

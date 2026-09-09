@@ -9,7 +9,11 @@ from sklearn.linear_model import LinearRegression
 import joblib
 import database
 
-MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model_binaries')
+if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+    MODELS_DIR = '/tmp/model_binaries'
+else:
+    MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model_binaries')
+
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 # Layer 4: Rules Engine
